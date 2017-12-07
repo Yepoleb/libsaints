@@ -28,8 +28,11 @@ public:
     void load();
     void loadFileData(PackfileEntry& entry);
     PackfileEntry& getEntryByFilename(const QString& filename);
+    const PackfileEntry& getEntryByFilename(const QString& filename) const;
     PackfileEntry& getEntry(int index);
+    const PackfileEntry& getEntry(int index) const;
     QVector<PackfileEntry>& getEntries();
+    const QVector<PackfileEntry>& getEntries() const;
     int getEntriesCount() const;
 
     quint32 getDescriptor() const;
@@ -54,6 +57,13 @@ public:
     void setCompressedDataSize(qint64 value);
 
 private:
+    void loadHeader6();
+    void loadHeader10();
+
+    qint64 getEntriesOffset();
+    qint64 getEntryNamesOffset();
+    qint64 getDataOffset();
+
     QIODevice* m_stream;
 
     quint32 m_descriptor;
@@ -62,6 +72,7 @@ private:
     qint64 m_file_size;
 
     int m_flags;
+    int m_sector;
     int m_num_files;
     qint64 m_dir_size;
     qint64 m_filename_size;
@@ -79,15 +90,14 @@ class PackfileEntry
 
 public:
     PackfileEntry();
-    PackfileEntry(Packfile* parent, QIODevice& stream);
+    PackfileEntry(Packfile& parent);
 
-    void load(QIODevice& stream);
+    void load6(QIODevice& stream);
+    void load10(QIODevice& stream);
     QByteArray& getData();
 
     void setFilename(const QString& value);
     QString getFilename() const;
-    void setFilenameOffset(qint64 value);
-    qint64 getFilenameOffset() const;
     void setStart(qint64 value);
     qint64 getStart() const;
     void setSize(qint64 value);
@@ -102,7 +112,6 @@ public:
 private:
     Packfile* m_packfile;
 
-    qint64 m_filename_offset;
     qint64 m_start;
     qint64 m_size;
     qint64 m_compressed_size;

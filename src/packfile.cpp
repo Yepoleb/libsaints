@@ -6,17 +6,16 @@
 #include <QtCore/QIODevice>
 #include <QtCore/QVector>
 
-#include "zlib.h"
-
 #include "byteio.hpp"
 #include "packfile.hpp"
+#include "util.hpp"
 
 
 
 namespace Saints {
 
-constexpr qint64 PACKFILE_HEADER_SIZE = 40;
-constexpr qint64 ZLIB_CHUNK_SIZE = 16384;
+constexpr qint64 PACKFILE_HEADER_SIZE_10 = 40;
+constexpr qint64 PACKFILE_HEADER_SIZE_6 = 380;
 
 
 
@@ -44,6 +43,53 @@ void Packfile::load()
 
     m_descriptor = reader.readU32();
     m_version = reader.readU32();
+
+    if (m_version == 6) {
+        loadHeader6();
+    } else if (m_version == 10) {
+        loadHeader10();
+    } else {
+        throw std::runtime_error("Unsupported version");
+    }
+}
+
+void Packfile::loadHeader6()
+{
+    ByteReader reader(*m_stream);
+
+    reader.ignore(0x144); // Skip runtime variables
+    m_flags = reader.readU32();
+    m_sector = reader.readU32();
+
+    m_num_files = reader.readU32();
+    m_file_size = reader.readU32();
+    m_dir_size = reader.readU32();
+    m_filename_size = reader.readU32();
+
+    m_data_size = reader.readU32();
+    m_compressed_data_size = reader.readU32();
+
+    reader.align(2048);
+
+    QVector<qint64> filename_offsets;
+    for (int i = 0; i < m_num_files; i++) {
+        PackfileEntry entry(*this);
+        filename_offsets.push_back(reader.readU32());
+        entry.load6(*m_stream);
+        m_entries.push_back(entry);
+    }
+
+    qint64 entryname_offset = getEntryNamesOffset();
+    for (int i = 0; i < m_num_files; i++) {
+        reader.seek(entryname_offset + filename_offsets[i]);
+        m_entries[i].m_filename = reader.readCString();
+    }
+}
+
+void Packfile::loadHeader10()
+{
+    ByteReader reader(*m_stream);
+
     m_header_checksum = reader.readU32();
     m_file_size = reader.readU32();
 
@@ -55,72 +101,19 @@ void Packfile::load()
     m_data_size = reader.readU32();
     m_compressed_data_size = reader.readU32();
 
+    QVector<qint64> filename_offsets;
     for (int i = 0; i < m_num_files; i++) {
-        PackfileEntry entry(this, *m_stream);
+        PackfileEntry entry(*this);
+        filename_offsets.push_back(reader.readU64());
+        entry.load10(*m_stream);
         m_entries.push_back(entry);
     }
 
-    qint64 dir_offset = PACKFILE_HEADER_SIZE + m_dir_size;
-
-    for (PackfileEntry& entry : m_entries) {
-        reader.seek(dir_offset + entry.m_filename_offset);
-        entry.m_filename = reader.readCString();
+    qint64 entryname_offset = getEntryNamesOffset();
+    for (int i = 0; i < m_num_files; i++) {
+        reader.seek(entryname_offset + filename_offsets[i]);
+        m_entries[i].m_filename = reader.readCString();
     }
-}
-
-QByteArray decompress_stream(QIODevice& stream, qint64 out_size)
-{
-    QByteArray in_chunk(ZLIB_CHUNK_SIZE, 0);
-    QByteArray data_decompressed(out_size, 0);
-    qint64 out_pos = 0;
-
-    int ret;
-    z_stream zstrm;
-    zstrm.zalloc = Z_NULL;
-    zstrm.zfree = Z_NULL;
-    zstrm.opaque = Z_NULL;
-    zstrm.avail_in = 0;
-    zstrm.next_in = Z_NULL;
-    ret = inflateInit(&zstrm);
-
-    if (ret != Z_OK) {
-        throw std::runtime_error("Failed to initialize");
-    }
-
-    do {
-        qint64 bytes_read = stream.read(in_chunk.data(), ZLIB_CHUNK_SIZE);
-        if (bytes_read == -1) {
-            inflateEnd(&zstrm);
-            throw std::runtime_error("Error reading file");
-        }
-        if (bytes_read == 0) {
-            break;
-        }
-        zstrm.avail_in = bytes_read;
-        zstrm.next_in = reinterpret_cast<unsigned char*>(in_chunk.data());
-        zstrm.avail_out = out_size - out_pos;
-        zstrm.next_out = reinterpret_cast<unsigned char*>(
-            data_decompressed.data() + out_pos);
-        ret = inflate(&zstrm, Z_NO_FLUSH);
-        assert(ret != Z_STREAM_ERROR);
-        switch (ret) {
-        case Z_NEED_DICT:
-        case Z_DATA_ERROR:
-            inflateEnd(&zstrm);
-            throw std::runtime_error("Invalid compression data");
-        case Z_MEM_ERROR:
-            inflateEnd(&zstrm);
-            throw std::bad_alloc();
-        }
-        out_pos -= zstrm.avail_out;
-        if (out_pos > out_size) {
-            inflateEnd(&zstrm);
-            throw std::runtime_error("Invalid data size");
-        }
-    } while (ret != Z_STREAM_END);
-
-    inflateEnd(&zstrm);
-    return data_decompressed;
 }
 
 void Packfile::loadFileData(PackfileEntry& entry)
@@ -129,10 +122,8 @@ void Packfile::loadFileData(PackfileEntry& entry)
         return;
     }
 
-    qint64 data_offset = PACKFILE_HEADER_SIZE + m_dir_size + m_filename_size;
-
     if ((m_flags & PFF_COMPRESSED) && (m_flags & PFF_CONDENSED)) {
-        m_stream->seek(data_offset);
+        m_stream->seek(getDataOffset());
         QByteArray decompress_cache(
             decompress_stream(*m_stream, m_data_size)
         );
@@ -146,7 +137,7 @@ void Packfile::loadFileData(PackfileEntry& entry)
         }
     } else {
 
-        qint64 entry_offset = data_offset + entry.m_start;
+        qint64 entry_offset = getDataOffset() + entry.m_start;
         m_stream->seek(entry_offset);
 
         if (entry.m_flags & PFEP_COMPRESSED) {
@@ -169,8 +160,53 @@ PackfileEntry& Packfile::getEntryByFilename(const QString& filename)
     throw std::runtime_error("No file found");
 }
 
+const PackfileEntry& Packfile::getEntryByFilename(const QString& filename) const
+{
+    for (const PackfileEntry& entry : m_entries) {
+        if (entry.m_filename == filename) {
+            return entry;
+        }
+    }
+    throw std::runtime_error("No file found");
+}
+
+qint64 Packfile::getEntriesOffset()
+{
+    if (m_version == 6) {
+        return alignAddress(PACKFILE_HEADER_SIZE_6, 2048);
+    } else if (m_version) {
+        return PACKFILE_HEADER_SIZE_10;
+    } else {
+        throw std::runtime_error("Unknown Version");
+    }
+}
+
+qint64 Packfile::getEntryNamesOffset()
+{
+    if (m_version == 6) {
+        return alignAddress(getEntriesOffset() + m_dir_size, 2048);
+    } else if (m_version == 10) {
+        return getEntriesOffset() + m_dir_size;
+    } else {
+        throw std::runtime_error("Unknown Version");
+    }
+}
+
+qint64 Packfile::getDataOffset()
+{
+    if (m_version == 6) {
+        return alignAddress(getEntryNamesOffset() + m_filename_size, 2048);
+    } else if (m_version == 10) {
+        return getEntryNamesOffset() + m_filename_size;
+    } else {
+        throw std::runtime_error("Unknown Version");
+    }
+}
+
 PackfileEntry& Packfile::getEntry(int index) {return m_entries[index];}
+const PackfileEntry& Packfile::getEntry(int index) const {return m_entries[index];}
 QVector<PackfileEntry>& Packfile::getEntries() {return m_entries;}
+const QVector<PackfileEntry>& Packfile::getEntries() const {return m_entries;}
 int Packfile::getEntriesCount() const {return m_entries.size();}
 
 void Packfile::setDescriptor(quint32 value) {m_descriptor = value;}
@@ -201,18 +237,29 @@ PackfileEntry::PackfileEntry() :
 
 }
 
-PackfileEntry::PackfileEntry(Packfile* packfile, QIODevice& stream) :
-    m_packfile(packfile),
+PackfileEntry::PackfileEntry(Packfile& packfile) :
+    m_packfile(&packfile),
     m_is_cached(false)
 {
-    load(stream);
+
 }
 
-void PackfileEntry::load(QIODevice& stream)
+void PackfileEntry::load6(QIODevice& stream)
 {
     ByteReader reader(stream);
 
-    m_filename_offset = reader.readU64();
+    m_start = reader.readU32();
+    m_size = reader.readU32();
+    m_compressed_size = reader.readU32();
+    m_flags = 0;
+    m_alignment = 0;
+    reader.ignore(4); // parent pointer, we have our own
+}
+
+void PackfileEntry::load10(QIODevice& stream)
+{
+    ByteReader reader(stream);
+
     m_start = reader.readU32();
     m_size = reader.readU32();
     m_compressed_size = reader.readU32();
@@ -231,11 +278,8 @@ QByteArray& PackfileEntry::getData()
 
 
 
-
 void PackfileEntry::setFilename(const QString& value) {m_filename = value;}
 QString PackfileEntry::getFilename() const {return m_filename;}
-void PackfileEntry::setFilenameOffset(qint64 value) {m_filename_offset = value;}
-qint64 PackfileEntry::getFilenameOffset() const {return m_filename_offset;}
 void PackfileEntry::setStart(qint64 value) {m_start = value;}
 qint64 PackfileEntry::getStart() const {return m_start;}
 void PackfileEntry::setSize(qint64 value) {m_size = value;}

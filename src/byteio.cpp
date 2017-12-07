@@ -9,6 +9,12 @@
 
 namespace Saints {
 
+qint64 alignAddress(qint64 address, qint64 alignment)
+{
+    return (address + alignment - 1) / alignment * alignment;
+}
+
+
 ByteReader::ByteReader(QIODevice& stream) :
     m_stream(stream)
 {
@@ -40,10 +46,15 @@ QByteArray ByteReader::read(qint64 size)
 void ByteReader::align(qint64 alignment)
 {
     qint64 current_pos = tell();
-    qint64 align_pos = current_pos + (current_pos % alignment);
+    qint64 align_pos = alignAddress(current_pos, alignment);
     if (align_pos != current_pos) {
         seek(align_pos);
     }
+}
+
+void ByteReader::ignore(qint64 size)
+{
+    seek(tell() + size);
 }
 
 QString ByteReader::readString(qint64 size)
@@ -172,6 +183,11 @@ void ByteWriter::align(qint64 alignment)
     for (qint64 i = 0; i < to_align; i++) {
         m_stream.putChar('\0');
     }
+}
+
+void ByteWriter::ignore(qint64 size)
+{
+    seek(tell() + size);
 }
 
 void ByteWriter::writeString(const QString& str)
