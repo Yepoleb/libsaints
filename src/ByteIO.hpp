@@ -81,4 +81,4 @@ private:
     QIODevice& m_stream;
 };
 
-} // namespace saints
+}

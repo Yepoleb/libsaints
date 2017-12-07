@@ -3,7 +3,7 @@
 #include <QtCore/QString>
 #include <QtCore/QIODevice>
 
-#include "byteio.hpp"
+#include "ByteIO.hpp"
 
 
 
@@ -273,4 +273,4 @@ void ByteWriter::writeDouble(double value)
     return ByteWriter::write_generic<double>(value);
 }
 
-} // namespace saints
+}

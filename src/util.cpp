@@ -68,4 +68,4 @@ QByteArray decompress_stream(QIODevice& stream, qint64 out_size)
     return data_decompressed;
 }
 
-} // namespace Saints
+}
