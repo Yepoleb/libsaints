@@ -6,6 +6,7 @@
 #include "zlib.h"
 
 #include "util.hpp"
+#include "Saints/Exceptions.hpp"
 
 constexpr qint64 ZLIB_CHUNK_SIZE = 16384;
 
@@ -36,7 +37,7 @@ QByteArray decompress_stream(QIODevice& stream, qint64 out_size)
         qint64 bytes_read = stream.read(in_chunk.data(), ZLIB_CHUNK_SIZE);
         if (bytes_read == -1) {
             inflateEnd(&zstrm);
-            throw std::runtime_error("Error reading file");
+            throw IOError("Error reading input file");
         }
         if (bytes_read == 0) {
             break;
@@ -52,7 +53,7 @@ QByteArray decompress_stream(QIODevice& stream, qint64 out_size)
         case Z_NEED_DICT:
         case Z_DATA_ERROR:
             inflateEnd(&zstrm);
-            throw std::runtime_error("Invalid compression data");
+            throw ParsingError("Invalid compression data");
         case Z_MEM_ERROR:
             inflateEnd(&zstrm);
             throw std::bad_alloc();
@@ -60,7 +61,7 @@ QByteArray decompress_stream(QIODevice& stream, qint64 out_size)
         out_pos -= zstrm.avail_out;
         if (out_pos > out_size) {
             inflateEnd(&zstrm);
-            throw std::runtime_error("Invalid data size");
+            throw ParsingError("Invalid entry size");
         }
     } while (ret != Z_STREAM_END);
 

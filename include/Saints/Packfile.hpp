@@ -5,6 +5,8 @@
 #include <QtCore/QIODevice>
 #include <QtCore/QVector>
 
+#include "PackfileEntry.hpp"
+
 
 
 namespace Saints {
@@ -25,8 +27,8 @@ public:
     void open(QIODevice& stream);
     void load();
     void loadFileData(PackfileEntry& entry);
-    PackfileEntry& getEntryByFilename(const QString& filename);
-    const PackfileEntry& getEntryByFilename(const QString& filename) const;
+    PackfileEntry* getEntryByFilename(const QString& filename);
+    const PackfileEntry* getEntryByFilename(const QString& filename) const;
     PackfileEntry& getEntry(int index);
     const PackfileEntry& getEntry(int index) const;
     QVector<PackfileEntry>& getEntries();

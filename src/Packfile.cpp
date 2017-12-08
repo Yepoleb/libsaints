@@ -1,15 +1,14 @@
-#include <stdexcept>
-#include <cassert>
 #include <QtCore/QtGlobal>
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <QtCore/QIODevice>
 #include <QtCore/QVector>
 
+#include "Saints/Packfile.hpp"
+#include "Saints/PackfileEntry.hpp"
+#include "Saints/Exceptions.hpp"
 #include "ByteIO.hpp"
 #include "util.hpp"
-#include "Saints/PackfileEntry.hpp"
-#include "Saints/Packfile.hpp"
 
 
 
@@ -50,7 +49,7 @@ void Packfile::load()
     } else if (m_version == 10) {
         loadHeader10();
     } else {
-        throw std::runtime_error("Unsupported version");
+        throw ParsingError("Unsupported version");
     }
 }
 
@@ -151,24 +150,24 @@ void Packfile::loadFileData(PackfileEntry& entry)
     }
 }
 
-PackfileEntry& Packfile::getEntryByFilename(const QString& filename)
+PackfileEntry* Packfile::getEntryByFilename(const QString& filename)
 {
     for (PackfileEntry& entry : m_entries) {
         if (entry.m_filename == filename) {
-            return entry;
+            return &entry;
         }
     }
-    throw std::runtime_error("No file found");
+    return nullptr;
 }
 
-const PackfileEntry& Packfile::getEntryByFilename(const QString& filename) const
+const PackfileEntry* Packfile::getEntryByFilename(const QString& filename) const
 {
     for (const PackfileEntry& entry : m_entries) {
         if (entry.m_filename == filename) {
-            return entry;
+            return &entry;
         }
     }
-    throw std::runtime_error("No file found");
+    return nullptr;
 }
 
 qint64 Packfile::getEntriesOffset()
@@ -178,7 +177,7 @@ qint64 Packfile::getEntriesOffset()
     } else if (m_version) {
         return PACKFILE_HEADER_SIZE_10;
     } else {
-        throw std::runtime_error("Unknown Version");
+        throw ParsingError("Unsupported version");
     }
 }
 
@@ -189,7 +188,7 @@ qint64 Packfile::getEntryNamesOffset()
     } else if (m_version == 10) {
         return getEntriesOffset() + m_dir_size;
     } else {
-        throw std::runtime_error("Unknown Version");
+        throw ParsingError("Unsupported version");
     }
 }
 
@@ -200,7 +199,7 @@ qint64 Packfile::getDataOffset()
     } else if (m_version == 10) {
         return getEntryNamesOffset() + m_filename_size;
     } else {
-        throw std::runtime_error("Unknown Version");
+        throw ParsingError("Unsupported version");
     }
 }
 
