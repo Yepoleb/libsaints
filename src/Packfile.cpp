@@ -3,6 +3,7 @@
 #include <QtCore/QString>
 #include <QtCore/QIODevice>
 #include <QtCore/QVector>
+#include <QtCore/QBuffer>
 
 #include "Saints/Packfile.hpp"
 #include "Saints/PackfileEntry.hpp"
@@ -14,8 +15,11 @@
 
 namespace Saints {
 
-constexpr qint64 PACKFILE_HEADER_SIZE_10 = 40;
+constexpr quint32 PACKFILE_DESCRIPTOR = 0x51890ACE;
+
 constexpr qint64 PACKFILE_HEADER_SIZE_6 = 380;
+constexpr qint64 PACKFILE_HEADER_SIZE_10 = 40;
+constexpr qint64 PACKFILE_HEADER_SIZE_17 = 120;
 
 
 
@@ -42,14 +46,18 @@ void Packfile::load()
     ByteReader reader(*m_stream);
 
     m_descriptor = reader.readU32();
+
+    if (m_descriptor != PACKFILE_DESCRIPTOR) {
+        throw ParsingError("Invalid descriptor");
+    }
+
     m_version = reader.readU32();
 
-    if (m_version == 6) {
-        loadHeader6();
-    } else if (m_version == 10) {
-        loadHeader10();
-    } else {
-        throw ParsingError("Unsupported version");
+    switch (m_version) {
+        case 6: loadHeader6(); break;
+        case 10: loadHeader10(); break;
+        case 17: loadHeader17(); break;
+        default: throw ParsingError("Unsupported version");
     }
 }
 
@@ -61,7 +69,7 @@ void Packfile::loadHeader6()
     m_flags = reader.readU32();
     reader.ignore(4); // Ignore sector value
 
-    m_num_files = reader.readU32();
+    int num_files = reader.readU32();
     m_file_size = reader.readU32();
     m_dir_size = reader.readU32();
     m_filename_size = reader.readU32();
@@ -69,10 +77,13 @@ void Packfile::loadHeader6()
     m_data_size = reader.readU32();
     m_compressed_data_size = reader.readU32();
 
-    reader.align(2048);
+    m_data_offset = 0;
+    m_timestamp = 0;
+
+    reader.seek(getEntriesOffset());
 
     QVector<qint64> filename_offsets;
-    for (int i = 0; i < m_num_files; i++) {
+    for (int i = 0; i < num_files; i++) {
         PackfileEntry entry(*this);
         filename_offsets.push_back(reader.readU32());
         entry.load6(*m_stream);
@@ -80,7 +91,7 @@ void Packfile::loadHeader6()
     }
 
     qint64 entryname_offset = getEntryNamesOffset();
-    for (int i = 0; i < m_num_files; i++) {
+    for (int i = 0; i < num_files; i++) {
         reader.seek(entryname_offset + filename_offsets[i]);
         m_entries[i].m_filename = reader.readCString();
     }
@@ -94,15 +105,18 @@ void Packfile::loadHeader10()
     m_file_size = reader.readU32();
 
     m_flags = reader.readU32();
-    m_num_files = reader.readU32();
+    int num_files = reader.readU32();
     m_dir_size = reader.readU32();
     m_filename_size = reader.readU32();
 
     m_data_size = reader.readU32();
     m_compressed_data_size = reader.readU32();
 
+    m_data_offset = 0;
+    m_timestamp = 0;
+
     QVector<qint64> filename_offsets;
-    for (int i = 0; i < m_num_files; i++) {
+    for (int i = 0; i < num_files; i++) {
         PackfileEntry entry(*this);
         filename_offsets.push_back(reader.readU64());
         entry.load10(*m_stream);
@@ -110,9 +124,57 @@ void Packfile::loadHeader10()
     }
 
     qint64 entryname_offset = getEntryNamesOffset();
-    for (int i = 0; i < m_num_files; i++) {
+    for (int i = 0; i < num_files; i++) {
         reader.seek(entryname_offset + filename_offsets[i]);
         m_entries[i].m_filename = reader.readCString();
+    }
+}
+
+void Packfile::loadHeader17()
+{
+    ByteReader reader(*m_stream);
+
+    m_header_checksum = reader.readU32();
+
+    m_flags = reader.readU32();
+    int num_files = reader.readU32();
+    int num_paths = reader.readU32();
+    m_dir_size = reader.readU32();
+    m_filename_size = reader.readU32();
+    m_file_size = reader.readU64();
+
+    m_data_size = reader.readU64();
+    m_compressed_data_size = reader.readU64();
+
+    m_timestamp = reader.readU64();
+    m_data_offset = reader.readU64();
+
+    reader.seek(getEntriesOffset());
+
+    QVector<qint64> filename_offsets;
+    QVector<qint64> filepath_offsets;
+    for (int i = 0; i < num_files; i++) {
+        PackfileEntry entry(*this);
+        filename_offsets.push_back(reader.readU64());
+        filepath_offsets.push_back(reader.readU64());
+        entry.load17(*m_stream);
+        m_entries.push_back(entry);
+    }
+
+    reader.seek(getEntryNamesOffset());
+
+    // Reads filenames into a buffer for faster seeking
+    // Currently not functional
+//    QByteArray filename_data(reader.read(m_filename_size));
+//    QBuffer filename_buffer(&filename_data);
+//    filename_buffer.open(QIODevice::ReadOnly);
+//    ByteReader filename_reader(filename_buffer);
+    qint64 names_offset = getEntryNamesOffset();
+    for (int i = 0; i < num_files; i++) {
+        reader.seek(names_offset + filename_offsets[i]);
+        m_entries[i].m_filename = reader.readCString();
+        reader.seek(names_offset + filepath_offsets[i]);
+        m_entries[i].m_filepath = reader.readCString();
     }
 }
 
@@ -125,7 +187,7 @@ void Packfile::loadFileData(PackfileEntry& entry)
     if ((m_flags & Compressed) && (m_flags & Condensed)) {
         m_stream->seek(getDataOffset());
         QByteArray decompress_cache(
-            decompress_stream(*m_stream, m_data_size)
+            decompressStream(*m_stream)
         );
         for (PackfileEntry& cond_entry : m_entries) {
             if (cond_entry.m_is_cached) {
@@ -141,7 +203,7 @@ void Packfile::loadFileData(PackfileEntry& entry)
         m_stream->seek(entry_offset);
 
         if (entry.m_flags & Compressed) {
-            entry.m_data_cache = decompress_stream(*m_stream, entry.m_size);
+            entry.m_data_cache = decompressStream(*m_stream);
         } else {
             entry.m_data_cache = m_stream->read(entry.m_size);
         }
@@ -172,34 +234,41 @@ const PackfileEntry* Packfile::getEntryByFilename(const QString& filename) const
 
 qint64 Packfile::getEntriesOffset()
 {
-    if (m_version == 6) {
-        return alignAddress(PACKFILE_HEADER_SIZE_6, 2048);
-    } else if (m_version) {
-        return PACKFILE_HEADER_SIZE_10;
-    } else {
-        throw ParsingError("Unsupported version");
+    switch (m_version) {
+        case 6: return alignAddress(PACKFILE_HEADER_SIZE_6, 2048);
+        case 10: return PACKFILE_HEADER_SIZE_10;
+        case 17: return PACKFILE_HEADER_SIZE_17;
+        default: throw ParsingError("Unsupported version");
     }
 }
 
 qint64 Packfile::getEntryNamesOffset()
 {
-    if (m_version == 6) {
-        return alignAddress(getEntriesOffset() + m_dir_size, 2048);
-    } else if (m_version == 10) {
-        return getEntriesOffset() + m_dir_size;
-    } else {
-        throw ParsingError("Unsupported version");
+    switch (m_version) {
+        case 6: return alignAddress(getEntriesOffset() + m_dir_size, 2048);
+        case 10: return getEntriesOffset() + m_dir_size;
+        case 17: return getEntriesOffset() + m_dir_size;
+        default: throw ParsingError("Unsupported version");
     }
 }
 
 qint64 Packfile::getDataOffset()
 {
-    if (m_version == 6) {
-        return alignAddress(getEntryNamesOffset() + m_filename_size, 2048);
-    } else if (m_version == 10) {
-        return getEntryNamesOffset() + m_filename_size;
-    } else {
-        throw ParsingError("Unsupported version");
+    switch (m_version) {
+        case 6: return alignAddress(getEntryNamesOffset() + m_filename_size, 2048);
+        case 10: return getEntryNamesOffset() + m_filename_size;
+        case 17: return m_data_offset;
+        default: throw ParsingError("Unsupported version");
+    }
+}
+
+QByteArray Packfile::decompressStream(QIODevice& stream)
+{
+    switch (m_version) {
+        case 6:
+        case 10: return decompressZLIB(stream);
+        case 17: return decompressLZ4(stream);
+        default: throw ParsingError("Unsupported version");
     }
 }
 
@@ -208,9 +277,11 @@ const PackfileEntry& Packfile::getEntry(int index) const {return m_entries[index
 QVector<PackfileEntry>& Packfile::getEntries() {return m_entries;}
 const QVector<PackfileEntry>& Packfile::getEntries() const {return m_entries;}
 int Packfile::getEntriesCount() const {return m_entries.size();}
-void Packfile::setVersion(int value) {m_version = value;}
 int Packfile::getVersion() const {return m_version;}
-void Packfile::setFlags(int value) {m_flags = value;}
+void Packfile::setVersion(int value) {m_version = value;}
 int Packfile::getFlags() const {return m_flags;}
+void Packfile::setFlags(int value) {m_flags = value;}
+qint64 Packfile::getTimestamp() const {return m_timestamp;}
+void Packfile::setTimestamp(qint64 value) {m_timestamp = value;}
 
 }

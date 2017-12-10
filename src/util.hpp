@@ -5,6 +5,7 @@
 
 namespace Saints {
 
-QByteArray decompress_stream(QIODevice& stream, qint64 out_size);
+QByteArray decompressZLIB(QIODevice& stream);
+QByteArray decompressLZ4(QIODevice& stream);
 
 }

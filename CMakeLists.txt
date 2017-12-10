@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.1.0)
 project(saints)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 find_package(Qt5Core REQUIRED)
 find_package(ZLIB REQUIRED)
-include_directories(${ZLIB_INCLUDE_DIRS})
-include_directories(include)
+find_package(LZ4 REQUIRED)
 
 set(SOURCES
     src/ByteIO.cpp
@@ -14,8 +14,15 @@ set(SOURCES
 
 option(BUILD_SHARED_LIBS "Build library as a shared object")
 add_library(saints ${SOURCES})
-target_link_libraries(saints Qt5::Core)
-target_link_libraries(saints ${ZLIB_LIBRARIES})
+target_link_libraries(saints PUBLIC Qt5::Core)
+target_link_libraries(saints PRIVATE ${ZLIB_LIBRARIES})
+target_link_libraries(saints PRIVATE ${LZ4_LIBRARIES})
+target_include_directories(saints PRIVATE ${ZLIB_INCLUDE_DIRS})
+target_include_directories(saints PRIVATE ${LZ4_INCLUDE_DIRS})
+target_include_directories(saints PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 set_property(TARGET saints PROPERTY POSITION_INDEPENDENT_CODE True)
 
 install(TARGETS saints EXPORT saintsTargets

@@ -39,14 +39,19 @@ public:
     void setVersion(int value);
     int getFlags() const;
     void setFlags(int value);
+    qint64 getTimestamp() const;
+    void setTimestamp(qint64 value);
 
 private:
     void loadHeader6();
     void loadHeader10();
+    void loadHeader17();
 
     qint64 getEntriesOffset();
     qint64 getEntryNamesOffset();
     qint64 getDataOffset();
+
+    QByteArray decompressStream(QIODevice& stream);
 
     QIODevice* m_stream;
 
@@ -56,12 +61,14 @@ private:
     qint64 m_file_size;
 
     int m_flags;
-    int m_num_files;
     qint64 m_dir_size;
     qint64 m_filename_size;
 
     qint64 m_data_size;
     qint64 m_compressed_data_size;
+
+    qint64 m_timestamp;
+    qint64 m_data_offset;
 
     QVector<PackfileEntry> m_entries;
     bool m_condensed_cached;
