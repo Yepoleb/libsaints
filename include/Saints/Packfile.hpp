@@ -23,6 +23,8 @@ public:
 
     Packfile();
     Packfile(QIODevice& stream);
+    Packfile(const Packfile& other) = delete;
+    Packfile& operator=(const Packfile& other) = delete;
 
     void open(QIODevice& stream);
     void load();
@@ -55,7 +57,6 @@ private:
 
     QIODevice* m_stream;
 
-    quint32 m_descriptor;
     int m_version;
     quint32 m_header_checksum;
     qint64 m_file_size;

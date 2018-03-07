@@ -3,6 +3,7 @@ project(saints)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 find_package(Qt5Core REQUIRED)
+find_package(crosstex REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(LZ4 REQUIRED)
 
@@ -10,11 +11,16 @@ set(SOURCES
     src/ByteIO.cpp
     src/Packfile.cpp
     src/PackfileEntry.cpp
+    src/DDSFile.cpp
+    src/PegFile.cpp
+    src/PegEntry.cpp
+    src/TGAFile.cpp
     src/util.cpp)
 
 option(BUILD_SHARED_LIBS "Build library as a shared object")
 add_library(saints ${SOURCES})
 target_link_libraries(saints PUBLIC Qt5::Core)
+target_link_libraries(saints PRIVATE Upstream::crosstex)
 target_link_libraries(saints PRIVATE ${ZLIB_LIBRARIES})
 target_link_libraries(saints PRIVATE ${LZ4_LIBRARIES})
 target_include_directories(saints PRIVATE ${ZLIB_INCLUDE_DIRS})

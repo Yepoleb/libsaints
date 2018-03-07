@@ -26,18 +26,23 @@ public:
     void load10(QIODevice& stream);
     void load17(QIODevice& stream);
     QByteArray& getData();
-    void setFilepath(const QString& value);
     QString getFilepath() const;
-    qint64 getSize() const;
+    void setFilepath(const QString& value);
 
-    void setFilename(const QString& value);
     QString getFilename() const;
-    void setDirectory(const QString& value);
+    void setFilename(const QString& value);
     QString getDirectory() const;
-    void setFlags(int value);
+    void setDirectory(const QString& value);
+    qint64 getStart() const;
+    void setStart(qint64 value);
+    qint64 getSize() const;
+    void setSize(qint64 value);
+    qint64 getCompressedSize() const;
+    void setCompressedSize(qint64 value);
     int getFlags() const;
-    void setAlignment(int value);
+    void setFlags(int value);
     int getAlignment() const;
+    void setAlignment(int value);
 
 private:
     Packfile* m_packfile;

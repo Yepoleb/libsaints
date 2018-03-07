@@ -1,3 +1,4 @@
+#include <cassert>
 #include <QtCore/QtGlobal>
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
@@ -43,12 +44,13 @@ void Packfile::open(QIODevice& stream)
 
 void Packfile::load()
 {
+    assert(m_stream);
     ByteReader reader(*m_stream);
 
-    m_descriptor = reader.readU32();
+    quint32 descriptor = reader.readU32();
 
-    if (m_descriptor != PACKFILE_DESCRIPTOR) {
-        throw ParsingError("Invalid descriptor");
+    if (descriptor != PACKFILE_DESCRIPTOR) {
+        throw FieldError("descriptor", QString::number(descriptor, 16));
     }
 
     m_version = reader.readU32();
@@ -63,6 +65,7 @@ void Packfile::load()
 
 void Packfile::loadHeader6()
 {
+    assert(m_stream);
     ByteReader reader(*m_stream);
 
     reader.ignore(0x144); // Skip runtime variables
@@ -99,6 +102,7 @@ void Packfile::loadHeader6()
 
 void Packfile::loadHeader10()
 {
+    assert(m_stream);
     ByteReader reader(*m_stream);
 
     m_header_checksum = reader.readU32();
@@ -132,6 +136,7 @@ void Packfile::loadHeader10()
 
 void Packfile::loadHeader17()
 {
+    assert(m_stream);
     ByteReader reader(*m_stream);
 
     m_header_checksum = reader.readU32();
@@ -180,6 +185,7 @@ void Packfile::loadHeader17()
 
 void Packfile::loadFileData(PackfileEntry& entry)
 {
+    assert(m_stream);
     if (entry.m_is_cached) {
         return;
     }

@@ -4,16 +4,12 @@
 #include <QtCore/QIODevice>
 
 #include "ByteIO.hpp"
+#include "util.hpp"
+#include "Saints/Exceptions.hpp"
 
 
 
 namespace Saints {
-
-qint64 alignAddress(qint64 address, qint64 alignment)
-{
-    return (address + alignment - 1) / alignment * alignment;
-}
-
 
 ByteReader::ByteReader(QIODevice& stream) :
     m_stream(stream)
@@ -38,7 +34,13 @@ void ByteReader::read(char* data, qint64 size)
 
 QByteArray ByteReader::read(qint64 size)
 {
-    return m_stream.read(size);
+    QByteArray buffer;
+    buffer.resize(size);
+    qint64 bytes_read = m_stream.read(buffer.data(), size);
+    if (bytes_read != size) {
+        throw IOError(QString("End of file while reading %1 bytes").arg(size));
+    }
+    return buffer;
 }
 
 // Additional methods
@@ -180,26 +182,25 @@ void ByteWriter::align(qint64 alignment)
 {
     qint64 current_pos = tell();
     qint64 to_align = current_pos % alignment;
-    for (qint64 i = 0; i < to_align; i++) {
+    pad(to_align);
+}
+
+void ByteWriter::pad(qint64 size)
+{
+    for (qint64 i = 0; i < size; i++) {
         m_stream.putChar('\0');
     }
 }
 
-void ByteWriter::ignore(qint64 size)
-{
-    seek(tell() + size);
-}
-
 void ByteWriter::writeString(const QString& str)
 {
-    QByteArray buffer(str.toUtf8());
-    buffer.truncate(buffer.size() - 1); // Remove \0 from end
-    m_stream.write(buffer);
+    m_stream.write(str.toUtf8());
 }
 
 void ByteWriter::writeCString(const QString& str)
 {
     m_stream.write(str.toUtf8());
+    m_stream.putChar('\0');
 }
 
 template<typename T>

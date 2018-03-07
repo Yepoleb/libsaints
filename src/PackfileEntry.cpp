@@ -70,6 +70,15 @@ QByteArray& PackfileEntry::getData()
     return m_data_cache;
 }
 
+QString PackfileEntry::getFilepath() const
+{
+    if (m_filepath.isEmpty()) {
+        return m_filename;
+    } else {
+        return m_filepath + '\\' + m_filename;
+    }
+}
+
 void PackfileEntry::setFilepath(const QString& value)
 {
     if (value.contains('\\')) {
@@ -81,33 +90,20 @@ void PackfileEntry::setFilepath(const QString& value)
     }
 }
 
-QString PackfileEntry::getFilepath() const
-{
-    if (m_filepath.isEmpty()) {
-        return m_filename;
-    } else {
-        return m_filepath + '\\' + m_filename;
-    }
-}
-
-qint64 PackfileEntry::getSize() const
-{
-    if (m_is_cached) {
-        return m_data_cache.size();
-    } else {
-        return m_size;
-    }
-}
 
 
-
-void PackfileEntry::setFilename(const QString& value) {m_filename = value;}
 QString PackfileEntry::getFilename() const {return m_filename;}
-void PackfileEntry::setDirectory(const QString& value) {m_filepath = value;}
+void PackfileEntry::setFilename(const QString& value) {m_filename = value;}
 QString PackfileEntry::getDirectory() const {return m_filepath;}
-void PackfileEntry::setFlags(int value) {m_flags = value;}
+void PackfileEntry::setDirectory(const QString& value) {m_filepath = value;}
+qint64 PackfileEntry::getStart() const {return m_start;}
+void PackfileEntry::setStart(qint64 value) {m_start = value;}
+qint64 PackfileEntry::getSize() const {return m_size;}
+void PackfileEntry::setSize(qint64 value) {m_size = value;}
+qint64 PackfileEntry::getCompressedSize() const {return m_compressed_size;}
+void PackfileEntry::setCompressedSize(qint64 value) {m_compressed_size = value;}
 int PackfileEntry::getFlags() const {return m_flags;}
-void PackfileEntry::setAlignment(int value) {m_alignment = value;}
+void PackfileEntry::setFlags(int value) {m_flags = value;}
 int PackfileEntry::getAlignment() const {return m_alignment;}
-
+void PackfileEntry::setAlignment(int value) {m_alignment = value;}
 }

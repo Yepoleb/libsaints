@@ -9,9 +9,6 @@
 
 namespace Saints {
 
-qint64 alignAddress(qint64 address, qint64 alignment);
-
-
 class ByteReader
 {
 public:
@@ -57,7 +54,7 @@ public:
     void write(const char* data, qint64 size);
     void write(const QByteArray& data);
     void align(qint64 alignment);
-    void ignore(qint64 size);
+    void pad(qint64 size);
     void writeString(const QString& str);
     void writeCString(const QString& str);
 
